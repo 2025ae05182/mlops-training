@@ -1,0 +1,5 @@
+outs:
+- md5: 45cf404ef2d2a4b21fd08250549b7fee
+  size: 63708163
+  hash: md5
+  path: car_price_model.pkl
