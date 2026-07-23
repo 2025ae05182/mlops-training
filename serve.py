@@ -1,30 +1,83 @@
-from flask import Flask, request, jsonify
+from pathlib import Path
+from typing import Optional
+
 import joblib
+import pandas as pd
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uvicorn
 
-#initialize Flask App
-app = Flask(__name__)
+app = FastAPI(
+    title="Car Price Prediction API",
+    version="1.0.0",
+    description="Predict car selling price using the trained machine learning model.",
+    docs_url="/docs",
+)
 
-#load the trained model
-model = joblib.load("iris_model.pkl")
+model_path = Path(__file__).with_name("car_price_model.pkl")
+model = joblib.load(model_path)
 
-@app.route("/predict", methods=["POST"])
-def predict():
+
+class CarFeatures(BaseModel):
+    Make: str
+    Model: str
+    Year: int
+    Fuel_Type: str
+    Transmission: Optional[str] = None
+    Engine_Size: Optional[float] = None
+    Mileage: Optional[int] = None
+    Horsepower: Optional[float] = None
+    Torque: Optional[float] = None
+    Owners: Optional[int] = None
+    Accident_History: Optional[float] = None
+    Service_History: Optional[str] = None
+    Color: Optional[str] = None
+    Body_Type: Optional[str] = None
+    Drivetrain: Optional[str] = None
+    Fuel_Efficiency: Optional[float] = None
+    Location: Optional[str] = None
+
+
+class PredictionResponse(BaseModel):
+    predicted_selling_price: float
+
+
+@app.get("/")
+def home() -> dict:
+    return {"message": "FastAPI model server is running. Use /predict to POST car features."}
+
+
+@app.get("/health")
+def health() -> dict:
+    """Health check endpoint returns model load status."""
     try:
-        # Expect JSON input with "features"
-        data = request.json.get("features")
-        if not data:
-            return jsonify({"error": "No features provided"}, 400)
-        
-        # make prediction
-        prediction = model.predict([data])
-        return jsonify({"prediction": int(prediction[0])})
-    except Exception as e:
-        return jsonify({"error": int(str(e))}, 500)
+        return {"status": "ok", "model_loaded": True}
+    except Exception:
+        return {"status": "error", "model_loaded": False}
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Flask model server is running. Use /predict to POST features."
+
+@app.post("/predict", response_model=PredictionResponse)
+def predict(features: CarFeatures) -> PredictionResponse:
+    try:
+        input_frame = pd.DataFrame([features.model_dump()])
+        prediction = model.predict(input_frame)
+        return PredictionResponse(predicted_selling_price=float(prediction[0]))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.on_event("startup")
+def write_openapi_file():
+    """Write the OpenAPI schema to openapi.json at startup for reference."""
+    try:
+        schema = app.openapi()
+        out = Path(__file__).with_name("openapi.json")
+        import json
+
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(schema, f, indent=2)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
-    # Run on all interfaces, port 5000
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    uvicorn.run("serve:app", host="0.0.0.0", port=8000, reload=False)
